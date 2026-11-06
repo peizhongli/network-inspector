@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Network Filter</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">N</span>
+      <span class="brand-title">Network Filter</span>
+      <span id="modeBadge" class="mode-badge">DevTools</span>
+    </div>
+    <div class="page-info">
+      <span class="page-label">检查页面</span>
+      <span id="pageUrl" class="page-url" title="">—</span>
+    </div>
+    <div class="topbar-actions">
+      <button id="pauseBtn" class="btn" title="暂停 / 恢复捕获">暂停</button>
+      <button id="clearBtn" class="btn" title="清空当前列表">清空</button>
+      <button id="settingsBtn" class="btn icon-btn" title="设置">&#9881;</button>
+    </div>
+  </header>
+
+  <div class="subbar" id="tabBar">
+    <span class="subbar-label">标签页</span>
+    <select id="tabSelect" class="tab-select"></select>
+    <span id="sourceNote" class="source-note"></span>
+  </div>
+
+  <div class="filterbar">
+    <div class="search-wrap">
+      <input id="searchInput" type="text" spellcheck="false" autocomplete="off"
+             placeholder="关键字：搜索 URL / Header / Payload / 响应体…">
+      <button id="searchClear" class="clear-input" title="清除关键字">&times;</button>
+    </div>
+    <div class="section-toggles" id="sectionToggles">
+      <label class="chk" title="搜索完整 URL / path / query（同时匹配编码前与解码后形式）">
+        <input type="checkbox" id="secUrl" checked><span>URL</span>
+      </label>
+      <label class="chk"><input type="checkbox" id="secHeaders" checked><span>Header</span></label>
+      <label class="chk"><input type="checkbox" id="secPayload" checked><span>Payload</span></label>
+      <label class="chk"><input type="checkbox" id="secResponse" checked><span>响应</span></label>
+    </div>
+    <button id="caseBtn" class="toggle on" title="大小写不敏感（点击切换）">Aa</button>
+    <button id="highlightBtn" class="toggle" title="仅高亮匹配、不过滤列表">仅高亮</button>
+    <label class="chk" title="只显示请求头或响应头中存在自定义 Header 的请求">
+      <input type="checkbox" id="customOnly"><span>仅自定义 Header</span>
+    </label>
+    <select id="methodFilter" class="mini-select" title="按方法过滤"></select>
+    <select id="statusFilter" class="mini-select" title="按状态码过滤"></select>
+    <span id="countInfo" class="count-info"></span>
+  </div>
+
+  <main class="workspace">
+    <section class="list-pane">
+      <div class="list-head">
+        <span class="col-method">方法</span>
+        <span class="col-status">状态</span>
+        <span class="col-url">URL</span>
+        <span class="col-type">类型</span>
+        <span class="col-size">大小</span>
+        <span class="col-time">耗时</span>
+        <span class="col-flags">标记</span>
+      </div>
+      <div id="requestList" class="request-list"></div>
+      <div id="listEmpty" class="empty-state">
+        暂无请求。<br>
+        <span class="muted">DevTools 面板打开后刷新页面；注入模式下请求会随页面实时出现。</span>
+      </div>
+    </section>
+    <div class="splitter" id="splitter" role="separator" aria-orientation="vertical"
+         title="拖动调整列表 / 详情宽度"></div>
+    <section class="detail-pane" id="detailPane">
+      <div class="empty-state">选择左侧请求查看详细信息</div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <dialog id="settingsDialog" class="settings-dialog">
+    <form method="dialog" id="settingsForm">
+      <h2>设置</h2>
+      <label class="field">
+        <span>列表缓冲上限（条）</span>
+        <input id="setMaxEntries" type="number" min="50" max="5000" step="50">
+        <small>仅注入模式生效；超出后自动丢弃最旧的请求。</small>
+      </label>
+      <label class="field">
+        <span>JSON 解析阈值（KB）</span>
+        <input id="setParseThreshold" type="number" min="64" max="20480" step="64">
+        <small>响应体超过该值时不再解析 JSON 树，只显示大小并允许下载。</small>
+      </label>
+      <label class="field">
+        <span>单条响应捕获上限（MB）</span>
+        <input id="setMaxCapture" type="number" min="0.5" max="50" step="0.5">
+        <small>注入模式读取响应体的上限；超出部分截断并标记。DevTools 模式按 HAR 内容单独处理。</small>
+      </label>
+      <label class="field">
+        <span>额外标准 Header 白名单（逗号或换行分隔）</span>
+        <textarea id="setExtraWhitelist" rows="2" placeholder="例如：x-request-id, x-trace-id"></textarea>
+        <small>这些 Header 不会再被标记为“自定义”。</small>
+      </label>
+      <label class="field">
+        <span>强制标记为自定义的 Header（逗号或换行分隔）</span>
+        <textarea id="setBlacklist" rows="2" placeholder="例如：x-powered-by"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="settingsCancel" class="btn">取消</button>
+        <button type="submit" id="settingsSave" class="btn primary">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="panel-utils.js"></script>
+  <script src="panel-data.js"></script>
+  <script src="panel-copy.js"></script>
+  <script src="panel-render.js"></script>
+  <script src="panel-response.js"></script>
+  <script src="panel-main.js"></script>
+</body>
+</html>

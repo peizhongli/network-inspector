@@ -1,0 +1,27 @@
+# 依赖与构建产物（本扩展零构建，保留以防后续引入）
+node_modules/
+dist/
+build/
+coverage/
+
+# 打包产物 / 签名文件，绝不入库
+*.crx
+*.pem
+*.key
+*.zip
+
+# 本地日志与缓存
+*.log
+logs/
+.cache/
+
+# 编辑器与系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# 临时文件
+*.tmp
+tmp/

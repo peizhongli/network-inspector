@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Network Inspector Mock</title>
+  <style>
+    body { font: 14px/1.6 -apple-system, "PingFang SC", sans-serif; margin: 24px; background: #f7f8fa; color: #222; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: #666; margin-bottom: 18px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 18px; }
+    button { padding: 9px 12px; border: 1px solid #d0d4da; border-radius: 6px; background: #fff; cursor: pointer; text-align: left; }
+    button:hover { border-color: #4e8cff; color: #1a5fd0; }
+    button small { display: block; color: #888; font-size: 11px; }
+    #log { background: #111; color: #9fe0a0; border-radius: 8px; padding: 12px; height: 260px; overflow: auto; font: 12px/1.6 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+    .tip { background: #fff7e6; border: 1px solid #ffd591; border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; font-size: 12px; color: #7a4d00; }
+  </style>
+</head>
+<body>
+  <h1>Network Inspector Mock</h1>
+  <div class="sub">点击按钮触发不同类型请求，用于验证搜索、自定义 Header 标记、JSON 树、下载与复制功能。</div>
+
+  <div class="tip">
+    验证步骤：打开 DevTools → 切到 <b>Network Filter</b> 面板（主模式）→ 点击下方按钮；
+    或直接点扩展图标打开独立面板（注入模式）。搜索关键字可试 <code>needle</code>、<code>mock-token</code>、<code>X-Custom-Flag</code>。
+  </div>
+
+  <div class="grid">
+    <button onclick="runJson()">GET JSON（嵌套 + 自定义响应头）<small>/api/json · X-Debug-Token / X-Custom-Flag</small></button>
+    <button onclick="runArrayXhr()">XHR JSON 数组<small>/api/array · 12 个元素</small></button>
+    <button onclick="runLarge()">超大 JSON（约 1.2MB）<small>/api/large · 超过解析阈值</small></button>
+    <button onclick="runBinary()">二进制流（2MB）<small>/api/binary · octet-stream</small></button>
+    <button onclick="runImage()">图片 PNG<small>/api/image.png</small></button>
+    <button onclick="runError()">500 错误 JSON<small>/api/error</small></button>
+    <button onclick="runSlow()">慢请求 800ms<small>/api/slow</small></button>
+    <button onclick="runSse()">SSE 流<small>/api/sse · text/event-stream</small></button>
+    <button onclick="runRedirect()">302 重定向<small>/api/redirect</small></button>
+    <button onclick="runPostJson()">POST JSON（自定义请求头）<small>/api/echo · X-Debug-Token</small></button>
+    <button onclick="runPostForm()">POST 表单<small>/api/form · application/x-www-form-urlencoded</small></button>
+    <button onclick="runMultipart()">POST FormData（含文件字段）<small>/api/multipart</small></button>
+    <button onclick="runAll()">一键全部触发<small>按顺序执行以上请求</small></button>
+    <button onclick="clearLog()">清空日志<small>不影响扩展中的数据</small></button>
+  </div>
+
+  <div id="log"></div>
+
+  <script>
+    const logEl = document.getElementById('log');
+    function log(message) {
+      const time = new Date().toLocaleTimeString();
+      logEl.textContent += `[${time}] ${message}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    function clearLog() { logEl.textContent = ''; }
+    function fail(label, error) { log(`✗ ${label}: ${error && error.message ? error.message : error}`); }
+
+    async function runJson() {
+      try {
+        const res = await fetch('/api/json');
+        const data = await res.json();
+        log(`✓ GET /api/json → ${res.status}，keys=${Object.keys(data).join(',')}，needle=${data.nested && data.nested.needle}`);
+      } catch (err) { fail('GET /api/json', err); }
+    }
+
+    function runArrayXhr() {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', '/api/array');
+      xhr.responseType = 'json';
+      xhr.setRequestHeader('X-Debug-Token', 'mock-token-123');
+      xhr.onload = () => log(`✓ XHR /api/array → ${xhr.status}，length=${Array.isArray(xhr.response) ? xhr.response.length : 'N/A'}`);
+      xhr.onerror = () => log('✗ XHR /api/array 失败');
+      xhr.send();
+    }
+
+    async function runLarge() {
+      try {
+        const res = await fetch('/api/large');
+        const len = res.headers.get('content-length');
+        log(`✓ GET /api/large → ${res.status}，content-length=${len}（不读取 body，验证超大响应保护）`);
+      } catch (err) { fail('GET /api/large', err); }
+    }
+
+    async function runBinary() {
+      try {
+        const res = await fetch('/api/binary', { headers: { 'X-Trace-Id': 'trace-binary-001' } });
+        const blob = await res.blob();
+        log(`✓ GET /api/binary → ${res.status}，blob.size=${blob.size}，type=${res.headers.get('content-type')}`);
+      } catch (err) { fail('GET /api/binary', err); }
+    }
+
+    async function runImage() {
+      try {
+        const res = await fetch('/api/image.png');
+        await res.blob();
+        log(`✓ GET /api/image.png → ${res.status}，type=${res.headers.get('content-type')}`);
+      } catch (err) { fail('GET /api/image.png', err); }
+    }
+
+    async function runError() {
+      try {
+        const res = await fetch('/api/error');
+        const data = await res.json();
+        log(`✓ GET /api/error → ${res.status}，message=${data.message}`);
+      } catch (err) { fail('GET /api/error', err); }
+    }
+
+    async function runSlow() {
+      const start = performance.now();
+      try {
+        const res = await fetch('/api/slow');
+        const data = await res.json();
+        log(`✓ GET /api/slow → ${res.status}，耗时约 ${Math.round(performance.now() - start)} ms，needle=${data.needle}`);
+      } catch (err) { fail('GET /api/slow', err); }
+    }
+
+    async function runSse() {
+      try {
+        const res = await fetch('/api/sse');
+        const text = await res.text();
+        log(`✓ GET /api/sse → ${res.status}，收到 ${text.split('\n\n').filter(Boolean).length} 个事件`);
+      } catch (err) { fail('GET /api/sse', err); }
+    }
+
+    async function runRedirect() {
+      try {
+        const res = await fetch('/api/redirect');
+        log(`✓ GET /api/redirect → ${res.status}，redirected=${res.redirected}，url=${res.url}`);
+      } catch (err) { fail('GET /api/redirect', err); }
+    }
+
+    async function runPostJson() {
+      try {
+        const res = await fetch('/api/echo', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Token': 'mock-token-123',
+            'X-Trace-Id': 'trace-json-001',
+          },
+          body: JSON.stringify({ name: 'network-inspector', needle: 'search-me', nested: { a: 1, b: [2, 3] } }),
+        });
+        const data = await res.json();
+        log(`✓ POST /api/echo → ${res.status}，received.needle=${data.received && data.received.needle}`);
+      } catch (err) { fail('POST /api/echo', err); }
+    }
+
+    async function runPostForm() {
+      try {
+        const res = await fetch('/api/form', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'name=network+inspector&needle=form-search&count=2',
+        });
+        const data = await res.json();
+        log(`✓ POST /api/form → ${res.status}，received=${data.received}`);
+      } catch (err) { fail('POST /api/form', err); }
+    }
+
+    async function runMultipart() {
+      try {
+        const form = new FormData();
+        form.append('name', 'network-inspector');
+        form.append('needle', 'multipart-search');
+        const file = new File(['hello from mock file'], 'mock-file.txt', { type: 'text/plain' });
+        form.append('upload', file);
+        const res = await fetch('/api/multipart', { method: 'POST', body: form });
+        const data = await res.json();
+        log(`✓ POST /api/multipart → ${res.status}，fields=${(data.fields || []).join(',')}`);
+      } catch (err) { fail('POST /api/multipart', err); }
+    }
+
+    async function runAll() {
+      clearLog();
+      log('开始按顺序触发全部请求…');
+      await runJson();
+      runArrayXhr();
+      await runLarge();
+      await runBinary();
+      await runImage();
+      await runError();
+      await runSlow();
+      await runSse();
+      await runRedirect();
+      await runPostJson();
+      await runPostForm();
+      await runMultipart();
+      log('全部触发完成。请在 Network Filter 面板中查看。');
+    }
+
+    log('Mock 页面已加载，点击按钮开始触发请求。');
+  </script>
+</body>
+</html>
