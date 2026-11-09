@@ -53,6 +53,9 @@ const state = {
     // 响应区局部搜索（与顶部全局关键字完全独立，不影响列表过滤）
     localKeyword: '',
     localMatchIndex: 0,
+    // 请求体展示方式：JSON 用 formatted/raw，form-urlencoded 用 table/raw
+    reqBodyView: 'formatted',
+    formBodyView: 'table',
   },
 };
 
@@ -92,6 +95,34 @@ function safeDecodeUrl(value) {
   } catch (err) {
     return text;
   }
+}
+
+/** 解码 form-urlencoded 片段：+ 代表空格，非法转义时退回原文 */
+function decodeFormComponent(value) {
+  const plus = String(value == null ? '' : value).replace(/\+/g, ' ');
+  try {
+    return decodeURIComponent(plus);
+  } catch (err) {
+    return plus;
+  }
+}
+
+/** 把 `a=1&b=%E4%B8%AD` 拆成解码后的键值对，供表格展示与搜索使用 */
+function parseUrlEncoded(text) {
+  const source = String(text == null ? '' : text).replace(/^\?/, '').trim();
+  if (!source) return [];
+  const out = [];
+  for (const pair of source.split('&')) {
+    if (!pair) continue;
+    const eq = pair.indexOf('=');
+    if (eq === -1) {
+      out.push({ name: decodeFormComponent(pair), value: '' });
+    } else {
+      out.push({ name: decodeFormComponent(pair.slice(0, eq)), value: decodeFormComponent(pair.slice(eq + 1)) });
+    }
+    if (out.length >= 500) break;
+  }
+  return out;
 }
 
 /**

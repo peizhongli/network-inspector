@@ -8,7 +8,7 @@
 
 - 四路搜索：URL（完整 URL / path / query，含编码与解码形式）、Header、Payload、响应体，命中处用 `U/H/P/R` 标记。
 - 自定义 Header 识别与"仅自定义 Header"过滤，支持额外白名单 / 黑名单。
-- JSON 折叠树、节点复制值 / 复制路径、大数组分页。
+- JSON 折叠树、节点复制值 / 复制路径、大数组分页；请求体 JSON 同样默认格式化展示，表单自动转字段表格。
 - 超大响应保护（默认 1 MB 不解析、只给下载）、二进制 / SSE 下载。
 - 一键复制 cURL / fetch / URL + Headers，按 Content-Type 正确生成请求体。
 - 两种模式：DevTools 面板（主）与页面注入（DevTools 关闭时补充）。
@@ -73,6 +73,16 @@
 - 每个节点提供 **复制值** 与 **复制路径**（路径形如 `$[0].items[2].name`）。
 - 数组/对象超过 100 个成员时分页加载（"显示更多"），避免一次性渲染。
 - 可在 `[JSON 树] / [原始]` 之间切换。
+
+### 3.1) 请求体（Payload）展示
+- JSON 请求体默认渲染为**格式化折叠树**（与响应区一致：折叠、`Array(n)`、复制值/复制路径、超过 100 项分页），可在 `[格式化 JSON] / [原始 body]` 间切换，选择在面板内保持。
+- JSON 判定以 Content-Type（`application/json`、`+json`）为主；类型缺失或错误时，若内容能 `JSON.parse` 成功也按 JSON 展示并提示；声明为 JSON 但解析失败则回退纯文本并提示。
+- `application/x-www-form-urlencoded` 显示**解码后的字段表格**（`+` 视为空格），可切换到原始串。
+- `multipart/form-data` 显示字段列表，文件字段标注文件名与大小占位。
+- 纯文本按原文展示；二进制只给大小与类型提示。
+- 超过解析阈值（默认 1 MB）时不做解析，只给大小 / 类型与复制、下载入口。
+- **复制原始 body** 始终输出字节级原始内容；**复制格式化 JSON** 输出缩进后的 JSON，两者互不污染。
+- 请求体区域同样支持详情内局部搜索，命中路径会自动展开。
 
 ### 4) 文件流 / 二进制下载
 - 响应为 `application/octet-stream`、`image/*`、`application/pdf`、`zip`、Excel、`protobuf`、`text/event-stream` 等二进制/流类型时，详情页提供 **下载原始响应**。

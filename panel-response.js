@@ -26,19 +26,52 @@ function jsonPrimitiveHtml(value, keyword) {
   return `<span class="jn-value-null">${esc(String(value))}</span>`;
 }
 
-function buildJsonNodeHtml(req, value, key, path, depth, keyword, registry) {
+// 响应树与请求体树各自保存展开/分页状态，避免互相干扰
+const JSON_SCOPES = {
+  response: { expanded: '_expanded', offsets: '_offsets', search: '_searchExpanded', map: '_jsonNodeMap' },
+  payload: { expanded: '_payloadExpanded', offsets: '_payloadOffsets', search: '_payloadSearchExpanded', map: '_payloadJsonNodeMap' },
+};
+
+function jsonScopeKeys(scope) {
+  return scope === 'payload' ? JSON_SCOPES.payload : JSON_SCOPES.response;
+}
+
+function ensureJsonState(req, scope) {
+  const keys = jsonScopeKeys(scope);
+  if (!req[keys.expanded]) req[keys.expanded] = new Set(['$']);
+  if (!req[keys.offsets]) req[keys.offsets] = new Map();
+}
+
+function jsonExpandedSet(req, scope) {
+  ensureJsonState(req, scope);
+  return req[jsonScopeKeys(scope).expanded];
+}
+
+function jsonOffsets(req, scope) {
+  ensureJsonState(req, scope);
+  return req[jsonScopeKeys(scope).offsets];
+}
+
+function jsonNodeMap(req, scope) {
+  return req[jsonScopeKeys(scope).map] || new Map();
+}
+
+function buildJsonNodeHtml(req, value, key, path, depth, keyword, registry, scope) {
   const isRoot = key === null;
   const isArray = Array.isArray(value);
   const isObject = isPlainContainer(value) && !isArray;
   const isContainer = isArray || isObject;
+  const scopeKeys = jsonScopeKeys(scope);
 
   const nodeId = registry.nextId++;
   registry.map.set(nodeId, { value, path });
 
-  if (!req._expanded) req._expanded = new Set(['$']);
-  // 局部搜索命中的路径会被临时展开（不写回用户的 _expanded，清空搜索后恢复原状）
+  ensureJsonState(req, scope);
+  // 搜索命中的路径会被临时展开（不写回用户的展开状态，清空搜索后恢复原状）
+  const searchExpanded = req[scopeKeys.search];
   const expanded =
-    isContainer && (req._expanded.has(path) || (req._searchExpanded && req._searchExpanded.has(path)));
+    isContainer &&
+    (req[scopeKeys.expanded].has(path) || (searchExpanded && searchExpanded.has(path)));
 
   let keyHtml = '';
   if (isRoot) {
@@ -65,7 +98,7 @@ function buildJsonNodeHtml(req, value, key, path, depth, keyword, registry) {
   let children = '';
   if (isContainer && expanded) {
     const keys = isArray ? Array.from({ length: value.length }, (_, i) => i) : Object.keys(value);
-    const offset = (req._offsets && req._offsets.get(path)) || 0;
+    const offset = req[scopeKeys.offsets].get(path) || 0;
     const LIMIT = 100;
     const slice = keys.slice(offset, offset + LIMIT);
     const childHtml = slice
@@ -77,7 +110,8 @@ function buildJsonNodeHtml(req, value, key, path, depth, keyword, registry) {
           jsonChildPath(path, childKey, isArray),
           depth + 1,
           keyword,
-          registry
+          registry,
+          scope
         )
       )
       .join('');
@@ -103,10 +137,10 @@ function buildJsonNodeHtml(req, value, key, path, depth, keyword, registry) {
   </div>`;
 }
 
-function buildJsonTreeHtml(req, value, keyword) {
+function buildJsonTreeHtml(req, value, keyword, scope) {
   const registry = { nextId: 0, map: new Map() };
-  req._jsonNodeMap = registry.map;
-  return `<div class="json-tree">${buildJsonNodeHtml(req, value, null, '$', 0, keyword, registry)}</div>`;
+  req[jsonScopeKeys(scope).map] = registry.map;
+  return `<div class="json-tree">${buildJsonNodeHtml(req, value, null, '$', 0, keyword, registry, scope)}</div>`;
 }
 
 function jsonParse(text) {
@@ -242,14 +276,10 @@ function onRequestUpdated(req) {
   renderList();
 }
 
-// 在模型里初始化展开/偏移状态
-function ensureJsonState(req) {
-  if (!req._expanded) req._expanded = new Set(['$']);
-  if (!req._offsets) req._offsets = new Map();
-}
+// 在模型里初始化展开/偏移状态（见文件上方的 jsonScopeKeys / ensureJsonState）
 
-// ---------------------------------------------------------------- 响应区局部搜索
-// 与顶部全局关键字完全独立：只作用于 Response / Raw 内容，不影响列表过滤。
+// ---------------------------------------------------------------- 详情内局部搜索
+// 与顶部全局关键字完全独立：只作用于 Payload / Response / Raw 内容，不影响列表过滤。
 
 function localSearchKeyword() {
   return cleanKeyword(state.ui.localKeyword);
@@ -303,17 +333,26 @@ function scanJsonMatches(value, path, keyword, expandSet, counter) {
   return matched;
 }
 
-function prepareJsonSearchExpansion(req, keyword, value) {
-  req._searchExpanded = null;
-  if (!req || !keyword || !isPlainContainer(value)) return;
+function prepareJsonSearchExpansion(req, keyword, value, scope) {
+  if (!req) return;
+  req[jsonScopeKeys(scope).search] = null;
+  if (!keyword || !isPlainContainer(value)) return;
   const expandSet = new Set();
   scanJsonMatches(value, '$', keyword, expandSet, { n: 0 });
-  if (expandSet.size) req._searchExpanded = expandSet;
+  if (expandSet.size) req[jsonScopeKeys(scope).search] = expandSet;
 }
 
 function localSearchUnsupportedReason(req, tab) {
   // Raw 视图始终可以搜索（至少包含请求/响应头文本）
   if (tab === 'raw') return '';
+  if (tab === 'payload') {
+    const body = req && req.reqBody;
+    if (!body) return '该请求没有可搜索的请求体';
+    const size = Number(body.size) || (body.text ? body.text.length : 0);
+    if (body.kind === 'binary') return '二进制请求体不可搜索';
+    if (size > state.settings.parseThresholdBytes) return '请求体过大未解析，可下载后搜索';
+    return '';
+  }
   const body = req && req.respBody;
   if (!body) return '当前没有可搜索的响应内容';
   const size = Number(body.size) || Number(req.size) || 0;
@@ -337,8 +376,9 @@ function buildLocalSearchBar(req) {
   const reason = localSearchUnsupportedReason(req, state.detailTab);
   const disabled = Boolean(reason);
   const kw = state.ui.localKeyword || '';
+  const label = state.detailTab === 'payload' ? '请求体内搜索' : '响应内搜索';
   return `<div class="local-search-bar${disabled ? ' disabled' : ''}" id="localSearchBar">
-    <span class="local-search-tag">响应内搜索</span>
+    <span class="local-search-tag">${label}</span>
     <div class="local-search-input">
       <input id="localSearchInput" type="text" spellcheck="false" autocomplete="off"
              placeholder="与顶部搜索独立，不影响列表过滤" value="${esc(kw)}"${disabled ? ' disabled' : ''}>
@@ -401,12 +441,14 @@ function jumpLocalMatch(direction) {
   focusLocalMatch(true);
 }
 
-/** 只重渲染响应内容区，保留局部搜索输入框的焦点与光标 */
+/** 只重渲染详情内容区，保留局部搜索输入框的焦点与光标 */
 function updateResponseBody(scrollToFirst) {
   const req = selectedRequest();
   const body = $('#detailBody');
   if (!req || !body) return;
-  body.innerHTML = state.detailTab === 'raw' ? buildRawTab(req) : buildResponseTab(req);
+  if (state.detailTab === 'raw') body.innerHTML = buildRawTab(req);
+  else if (state.detailTab === 'payload') body.innerHTML = buildPayloadTab(req);
+  else body.innerHTML = buildResponseTab(req);
   if (scrollToFirst) state.ui.localMatchIndex = 0;
   requestAnimationFrame(() => focusLocalMatch(Boolean(scrollToFirst)));
 }

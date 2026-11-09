@@ -382,9 +382,12 @@ function bindDetailEvents() {
       return;
     }
 
+    // Payload / Response 各有独立的 JSON 树状态
+    const jsonScope = state.detailTab === 'payload' ? 'payload' : 'response';
+
     const nodeBtn = event.target.closest('button[data-node]');
     if (nodeBtn) {
-      const info = req._jsonNodeMap && req._jsonNodeMap.get(Number(nodeBtn.dataset.node));
+      const info = jsonNodeMap(req, jsonScope).get(Number(nodeBtn.dataset.node));
       if (!info) return;
       if (nodeBtn.dataset.act === 'copy-path') {
         copyText(info.path, `已复制路径 ${info.path}`);
@@ -405,19 +408,19 @@ function bindDetailEvents() {
 
     const toggleBtn = event.target.closest('.jn-toggle');
     if (toggleBtn && toggleBtn.dataset.toggle === '1') {
-      ensureJsonState(req);
+      const expanded = jsonExpandedSet(req, jsonScope);
       const path = toggleBtn.dataset.path;
-      if (req._expanded.has(path)) req._expanded.delete(path);
-      else req._expanded.add(path);
+      if (expanded.has(path)) expanded.delete(path);
+      else expanded.add(path);
       renderDetail();
       return;
     }
 
     const moreBtn = event.target.closest('button[data-more]');
     if (moreBtn) {
-      ensureJsonState(req);
+      const offsets = jsonOffsets(req, jsonScope);
       const path = moreBtn.dataset.more;
-      req._offsets.set(path, (req._offsets.get(path) || 0) + 100);
+      offsets.set(path, (offsets.get(path) || 0) + 100);
       renderDetail();
       return;
     }
@@ -429,6 +432,8 @@ function bindDetailEvents() {
         downloadResponse(req, false);
       } else if (action === 'download-text') {
         downloadResponse(req, true);
+      } else if (action === 'download-request-body') {
+        downloadRequestBody(req);
       } else if (action === 'load-body') {
         loadBodyAndRefresh(req);
       } else if (action === 'json-view-tree') {
@@ -437,6 +442,23 @@ function bindDetailEvents() {
       } else if (action === 'json-view-raw') {
         req._jsonView = 'raw';
         renderDetail();
+      } else if (action === 'req-body-view-json') {
+        // 展示方式在面板内记住，切换请求后仍保持
+        state.ui.reqBodyView = 'formatted';
+        renderDetail();
+        markDetailKey();
+      } else if (action === 'req-body-view-raw') {
+        state.ui.reqBodyView = 'raw';
+        renderDetail();
+        markDetailKey();
+      } else if (action === 'form-body-view-table') {
+        state.ui.formBodyView = 'table';
+        renderDetail();
+        markDetailKey();
+      } else if (action === 'form-body-view-raw') {
+        state.ui.formBodyView = 'raw';
+        renderDetail();
+        markDetailKey();
       }
     }
   });

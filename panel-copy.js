@@ -178,18 +178,35 @@ function copyRequestBody(req, formatted) {
   copyText(text, formatted ? '已复制格式化 JSON' : '已复制原始请求体');
 }
 
-function requestBodyIsJson(req) {
+/**
+ * 判断请求体是否为 JSON：
+ * 以 Content-Type（application/json、+json）为主；
+ * 类型缺失或不可信时，回退到“内容能 JSON.parse 成功”即按 JSON 展示。
+ */
+function requestBodyJsonInfo(req) {
   const body = req.reqBody;
-  if (!body || body.kind !== 'text' || !body.text) return false;
-  if (isJsonMime(bodyMime(req))) return true;
-  const trimmed = body.text.trim();
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return false;
-  try {
-    JSON.parse(trimmed);
-    return true;
-  } catch (err) {
-    return false;
+  if (!body || body.kind !== 'text' || !body.text) return { isJson: false };
+  const mime = bodyMime(req);
+  const mimeJson = isJsonMime(mime);
+  const parsed = jsonParse(body.text);
+  if (parsed.ok) {
+    return { isJson: true, value: parsed.value, mime, mimeJson };
   }
+  return { isJson: false, mime, mimeJson };
+}
+
+/** 下载原始请求体（body.text 为捕获到的原始内容，不做任何格式化） */
+function downloadRequestBody(req) {
+  const body = req.reqBody;
+  if (!body || typeof body.text !== 'string' || !body.text) {
+    toast('请求体内容未捕获，无法下载', 'warn');
+    return;
+  }
+  saveBlob(
+    new Blob([body.text], { type: bodyMime(req) || 'text/plain;charset=utf-8' }),
+    suggestedFilename(req, '.body.txt'),
+    '已开始下载原始请求体'
+  );
 }
 
 // ---------------------------------------------------------------- 下载

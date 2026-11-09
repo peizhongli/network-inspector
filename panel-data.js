@@ -274,6 +274,22 @@ function requestPayloadText(req) {
   const body = req.reqBody;
   if (body) {
     if (body.text) lines.push(body.text);
+    // JSON 请求体额外提供格式化文本，让“仅高亮/搜索格式化后的缩进内容”也能命中
+    if (body.kind === 'text' && body.text) {
+      const parsed = jsonParse(body.text);
+      if (parsed.ok) {
+        try {
+          lines.push(JSON.stringify(parsed.value, null, 2));
+        } catch (err) {
+          // 循环引用等极端情况忽略
+        }
+      }
+      if (mimeEssence(bodyMime(req)) === 'application/x-www-form-urlencoded') {
+        for (const field of parseUrlEncoded(body.text)) {
+          lines.push(`${field.name}=${field.value}`);
+        }
+      }
+    }
     if (Array.isArray(body.formFields)) {
       for (const field of body.formFields) {
         lines.push(`${field.name}=${field.value == null ? '' : field.value}`);

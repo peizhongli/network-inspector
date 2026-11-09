@@ -772,6 +772,17 @@ mark.mark-current {
   margin: 4px 0 8px;
 }
 
+/* multipart 文件字段占位标记 */
+.file-chip {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  color: #9fc9ff;
+  border: 1px solid rgba(90, 150, 220, 0.4);
+  background: rgba(90, 150, 220, 0.12);
+}
+
 .note-box {
   border: 1px solid rgba(245, 166, 35, 0.4);
   background: rgba(245, 166, 35, 0.08);
